@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>Virtual Games · lettore</title>
+<style>html,body{margin:0;height:100%;background:#000;overflow:hidden}#p{position:absolute;inset:0;width:100%;height:100%}</style>
+</head>
+<body>
+<div id="p"></div>
+<script>
+// Ponte per Virtual Games (VirtualGate Prato): il gioco gira sul PC del locale (indirizzo locale),
+// e YouTube per molte canzoni vuole un sito "vero". Questa pagina sta su un sito vero, contiene
+// il lettore ufficiale di YouTube e riceve dal gioco solo i comandi play / pausa / vai a.
+'use strict';
+const q = new URLSearchParams(location.search);
+const id = (q.get('v') || '').replace(/[^\w-]/g, '').slice(0, 11);
+const start = Math.max(0, parseInt(q.get('start') || '0', 10) || 0);
+const controls = q.get('c') === '1' ? 1 : 0;
+const send = m => { try { parent.postMessage(Object.assign({ vgyt: 1 }, m), '*'); } catch(e){} };
+let P = null, st = -1, raf = 0;
+function loop(){
+  if(P && P.getCurrentTime) send({ ev: 'time', t: P.getCurrentTime(), s: st });
+  raf = st === 1 ? requestAnimationFrame(loop) : 0;
+}
+window.onYouTubeIframeAPIReady = () => {
+  P = new YT.Player('p', { videoId: id, width: '100%', height: '100%',
+    playerVars: { controls, disablekb: controls ? 0 : 1, rel: 0, playsinline: 1, iv_load_policy: 3, fs: 0, modestbranding: 1, start, origin: location.origin },
+    events: {
+      onReady: () => send({ ev: 'ready', dur: P.getDuration ? P.getDuration() : 0 }),
+      onError: e => send({ ev: 'error', code: e.data }),
+      onStateChange: e => { st = e.data; send({ ev: 'state', s: st, t: P.getCurrentTime ? P.getCurrentTime() : 0 }); if(st === 1 && !raf) raf = requestAnimationFrame(loop); },
+    } });
+};
+window.addEventListener('message', e => {
+  const m = e.data; if(!m || !m.vgcmd || !P) return;
+  try {
+    if(m.vgcmd === 'play') P.playVideo();
+    else if(m.vgcmd === 'pause') P.pauseVideo();
+    else if(m.vgcmd === 'seek') P.seekTo(Math.max(0, +m.t || 0), true);
+    else if(m.vgcmd === 'dur') send({ ev: 'dur', dur: P.getDuration() });
+    send({ ev: 'time', t: P.getCurrentTime(), s: st });
+  } catch(err){}
+});
+if(!id) send({ ev: 'error', code: 2 });
+else { const s = document.createElement('script'); s.src = 'https://www.youtube.com/iframe_api'; s.onerror = () => send({ ev: 'error', code: 'rete' }); document.head.appendChild(s); }
+</script>
+</body>
+</html>
